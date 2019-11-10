@@ -25,6 +25,9 @@ argsp.add_argument("-t", metavar="type", dest="type", choices=["blob", "commit",
 argsp.add_argument("-w", dest="write", action="store_true", help="Actually write the object into the database")
 argsp.add_argument("path", help="Read object from <file>")
 
+argsp = argsubparsers.add_parser("log", help="Display history of a given commit.")
+argsp.add_argument("commit", default="HEAD", nargs="?", help="Commit to start at.")
+
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -63,3 +66,31 @@ def cmd_hash_object(args):
     with open(args.path, "rb") as fd:
         sha = GitCommands.object_hash(fd, args.type.encode(), repo)
         print(sha)
+
+def cmd_log(args):
+    repo = GitCommands.repo_find()
+
+    print("digraph wyaglog{")
+    log_graphviz(repo, GitCommands.object_find(repo, args.commit), set())
+    print("}")
+
+def log_graphviz(repo, sha, seen):
+    if sha in seen:
+        return
+    seen.add(sha)
+
+    commit = GitCommands.object_read(repo, sha)
+    assert(commit.fmt == b'commit')
+
+    if not b'parent' in commit.kvlm.keys():
+        # initial commit
+        return
+
+    parents = commit.kvlm[b'parent']
+    if type(parents) != list:
+        parents = [parents]
+
+    for p in parents:
+        p = p.decode("ascii")
+        print("c_{0} -> c_{1};".format(sha, p))
+        log_graphviz(repo, p, seen)
