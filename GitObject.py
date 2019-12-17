@@ -3,6 +3,7 @@ import collections
 class GitObject (object):
 
     repo = None
+    fmt = None
 
     def __init__(self, repo, data=None):
         self.repo=repo
@@ -29,8 +30,6 @@ class GitBlob(GitObject):
         self.blobdata = data
 
 class GitKvlm(GitObject):
-
-    fmt = None
 
     def deserialize(self, data):
         self.kvlm = self.kvlm_parse(data)
@@ -102,9 +101,62 @@ class GitKvlm(GitObject):
 class GitCommit(GitKvlm):
     fmt = b'commit'
 
-    # def deserialize(self, data):
-    #     self.kvlm = GitCommands.kvlm_parse(data)
+class GitTreeLeaf(object):
+    def __init__(self, mode, path, sha):
+        self.mode = mode
+        self.path = path
+        self.sha = sha
 
-    # def serialize(self):
-    #     return GitCommands.kvlm_serialize(self.kvlm)
+    @staticmethod
+    def tree_parse_one(raw, start=0):
+        # Find the space terminator of the mode
+        x = raw.find(b' ', start)
+        assert(x-start == 5 or x-start == 6)
 
+        # Read the mode
+        mode = raw[start:x]
+
+        # Find the NULL termatinator of the path
+        y = raw.find(b'\x00', x)
+        # and read the path
+        path = raw[x+1:y]
+
+        # Read the SHA and convert to a hex string
+        sha = hex(int.from_bytes(raw[y+1:y+21, "big"]))[2:] # hex() adds 0x in front, we don't want that
+
+        return y+21, GitTreeLeaf(mode, path, sha)
+
+    @staticmethod
+    def tree_parse(raw):
+        pos = 0
+        max = len(raw)
+        ret = list()
+        while pos < max:
+            pos, data = GitTreeLeaf.tree_parse_one(raw, pos)
+            ret.append(data)
+
+        return ret
+
+    @staticmethod
+    def tree_serialize(obj):
+        #@FIXME Add serializer!
+        ret = b''
+        for i in obj.items:
+            ret += i.mode
+            ret += b' '
+            ret += i.path
+            ret += b'\x00'
+            sha = int(i.sha, 16)
+            #@FIXME Does
+            ret += sha.to_bytes(20, byteorder="big")
+        return ret
+
+class GitTree(GitObject):
+    fmt = b'tree'
+
+    def deserialize(self, data):
+        self.items = GitTreeLeaf.tree_parse(data)
+
+    def serialize(self):
+        return GitTreeLeaf.tree_serialize(self)
+    

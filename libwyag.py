@@ -5,7 +5,7 @@ import configparser
 import hashlib
 import os
 import zlib
-import GitCommands
+from GitCommands import *
 import GitRepository
 
 argparser = argparse.ArgumentParser(description="The stupid content tracker")
@@ -28,6 +28,13 @@ argsp.add_argument("path", help="Read object from <file>")
 argsp = argsubparsers.add_parser("log", help="Display history of a given commit.")
 argsp.add_argument("commit", default="HEAD", nargs="?", help="Commit to start at.")
 
+argsp = argsubparsers.add_parser("ls-tree", help="Pretty-print a tree object.")
+argsp.add_argument("object", help="The object to show.")
+
+argsp = argsubparsers.add_parser("checkout", help="Checkout a commit inside of a directory.")
+argsp.add_argument("commit", help="The commit or tree to checkout.")
+argsp.add_argument("path", help="The EMPTY directory to checkout on.")
+
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -47,14 +54,14 @@ def main(argv=sys.argv[1:]):
     elif args.command == "tag"          : cmd_tag(args)
 
 def cmd_init(args):
-    GitCommands.repo_create(args.path)
+    repo_create(args.path)
 
 def cmd_cat_file(args):
-    repo = GitCommands.repo_find()
+    repo = repo_find()
     cat_file(repo, args.object, fmt=args.type.encode())
 
 def cat_file(repo, obj, fmt=None):
-    obj = GitCommands.object_read(repo, GitCommands.object_find(repo, obj, fmt=fmt))
+    obj = object_read(repo, object_find(repo, obj, fmt=fmt))
     sys.stdout.buffer.write(obj.serialize())
 
 def cmd_hash_object(args):
@@ -64,14 +71,14 @@ def cmd_hash_object(args):
         repo = None
 
     with open(args.path, "rb") as fd:
-        sha = GitCommands.object_hash(fd, args.type.encode(), repo)
+        sha = object_hash(fd, args.type.encode(), repo)
         print(sha)
 
 def cmd_log(args):
-    repo = GitCommands.repo_find()
+    repo = repo_find()
 
     print("digraph wyaglog{")
-    log_graphviz(repo, GitCommands.object_find(repo, args.commit), set())
+    log_graphviz(repo, object_find(repo, args.commit), set())
     print("}")
 
 def log_graphviz(repo, sha, seen):
@@ -79,7 +86,7 @@ def log_graphviz(repo, sha, seen):
         return
     seen.add(sha)
 
-    commit = GitCommands.object_read(repo, sha)
+    commit = object_read(repo, sha)
     assert(commit.fmt == b'commit')
 
     if not b'parent' in commit.kvlm.keys():
@@ -94,3 +101,46 @@ def log_graphviz(repo, sha, seen):
         p = p.decode("ascii")
         print("c_{0} -> c_{1};".format(sha, p))
         log_graphviz(repo, p, seen)
+
+def cmd_ls_tree(args):
+    repo = repo_find()
+    obj = object_read(repo,object_find(repo, args.object, fmt=b'tree'))
+    
+    for item in obj.items:
+        print("{0} {1} {2}\t{3}".format(
+            "0" * (6 - len(item.mode)) + item.mode.decode("ascii"),
+            # Git's ls-tree displays the type of the object points to. We can do that too
+            object_read(repo, item.sha).fmt.decode("ascii"),
+            item.sha,
+            item.path.decode("ascii")))
+
+def cmd_checkout(args):
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.commit))
+
+    # If the object is a commit, we grab its tree
+    if obj.fmt == b'commit':
+        obj = object_read(repo, obj.kvlm[b'tree'].decode("ascii"))
+
+    # Verify that path is an empty directory
+    if os.path.exists(args.path):
+        if not os.path.isdir(args.path):
+            raise Exception("Not a directory {0}!".format(args.path))
+        if os.listdir(args.path):
+            raise Exception("Not empty {0}!".format(args.path))
+    else:
+        os.makedirs(args.path)
+
+    tree_checkout(repo, obj, os.path.realpath(args.path).encode())
+
+def tree_checkout(repo, tree, path):
+    for item in tree.items:
+        obj = object_read(repo, item.sha)
+        dest = os.path.join(path, item.path)
+
+        if obj.fmt == b'tree':
+            os.mkdir(dest)
+            tree_checkout(repo, obj, dest)
+        elif obj.fmt == b'blob':
+            with open(dest, 'wb') as f:
+                f.write(obj.blobdata)
