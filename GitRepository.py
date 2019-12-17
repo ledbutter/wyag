@@ -68,8 +68,8 @@ class GitRepository(object):
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("%s is not a directory!" % path)
-            if os.listdir(path):
-                raise Exception("%s is not empty!" % path)
+            # if os.listdir(path):
+            #     raise Exception("%s is not empty!" % path)
         else:
             os.makedirs(self.get_git_dir(path))
 

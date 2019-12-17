@@ -122,7 +122,7 @@ class GitTreeLeaf(object):
         path = raw[x+1:y]
 
         # Read the SHA and convert to a hex string
-        sha = hex(int.from_bytes(raw[y+1:y+21, "big"]))[2:] # hex() adds 0x in front, we don't want that
+        sha = hex(int.from_bytes(raw[y+1:y+21], "big"))[2:] # hex() adds 0x in front, we don't want that
 
         return y+21, GitTreeLeaf(mode, path, sha)
 
@@ -159,4 +159,7 @@ class GitTree(GitObject):
 
     def serialize(self):
         return GitTreeLeaf.tree_serialize(self)
+
+class GitTag(GitCommit):
+    fmt = b'tag'
     
